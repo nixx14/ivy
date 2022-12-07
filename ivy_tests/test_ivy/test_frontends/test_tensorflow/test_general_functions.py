@@ -4,6 +4,9 @@ import numpy as np
 
 # local
 import ivy_tests.test_ivy.helpers as helpers
+from ivy_tests.test_ivy.test_frontends.test_numpy.test_creation_routines.test_from_shape_or_value import (  # noqa : E501
+    _input_fill_and_dtype,
+)
 from ivy_tests.test_ivy.helpers import handle_frontend_test
 from ivy_tests.test_ivy.test_functional.test_core.test_linalg import _matrix_rank_helper
 
@@ -179,6 +182,40 @@ def test_tensorflow_ones(
     )
 
 
+# full
+@handle_frontend_test(
+    fn_tree="tensorflow.fill",
+    shape=helpers.get_shape(),
+    input_fill_dtype=_input_fill_and_dtype(),
+)
+def test_tensorflow_fill(
+    shape,
+    input_fill_dtype,
+    as_variable,
+    native_array,
+    with_out,
+    frontend,
+    fn_tree,
+    on_device,
+    num_positional_args,
+):
+    input_dtype, _, fill, dtype_to_cast = input_fill_dtype
+    helpers.test_frontend_function(
+        input_dtypes=input_dtype,
+        as_variable_flags=as_variable,
+        with_out=with_out,
+        with_inplace=False,
+        num_positional_args=num_positional_args,
+        native_array_flags=native_array,
+        frontend=frontend,
+        fn_tree=fn_tree,
+        on_device=on_device,
+        rtol=1e-05,
+        dims=shape,
+        value=fill,
+    )
+
+
 # einsum
 @handle_frontend_test(
     fn_tree="tensorflow.einsum",
@@ -225,7 +262,7 @@ def test_tensorflow_einsum(
 
 
 @st.composite
-def _constant_helper(draw):
+def _x_cast_dtype_shape(draw):
     x_dtype = draw(helpers.get_dtypes("valid", full=False))
     x_dtype, x = draw(
         helpers.dtype_and_values(
@@ -236,7 +273,10 @@ def _constant_helper(draw):
     to_shape = draw(
         helpers.reshape_shapes(shape=st.shared(helpers.get_shape(), key="value_shape")),
     )
-    cast_dtype = x_dtype[0]  # draw(
+    cast_dtype = x_dtype[0]
+    # known tensorflow bug when trying to cast to a different type
+    # https://github.com/tensorflow/tensorflow/issues/39554
+    # cast_dtype = draw(
     #     helpers.get_dtypes("valid", full=False)
     #     .map(lambda t: t[0])
     #     .filter(lambda t: ivy.can_cast(x_dtype[0], t))
@@ -247,7 +287,7 @@ def _constant_helper(draw):
 # constant
 @handle_frontend_test(
     fn_tree="tensorflow.constant",
-    all_args=_constant_helper(),
+    all_args=_x_cast_dtype_shape(),
 )
 def test_tensorflow_constant(
     *,
@@ -275,26 +315,10 @@ def test_tensorflow_constant(
     )
 
 
-@st.composite
-def _convert_to_tensor_helper(draw):
-    x_dtype = draw(helpers.get_dtypes("valid", full=False))
-    x_dtype, x = draw(
-        helpers.dtype_and_values(
-            dtype=x_dtype,
-        )
-    )
-    cast_dtype = x_dtype[0]  # draw(
-    #     helpers.get_dtypes("valid", full=False)
-    #     .map(lambda t: t[0])
-    #     .filter(lambda t: ivy.can_cast(x_dtype[0], t))
-    # )
-    return x_dtype, x, cast_dtype
-
-
 # convert_to_tensor
 @handle_frontend_test(
     fn_tree="tensorflow.convert_to_tensor",
-    dtype_x_cast=_convert_to_tensor_helper(),
+    dtype_x_cast=_x_cast_dtype_shape(),
     dtype_hint=helpers.get_dtypes("valid", full=False),
 )
 def test_tensorflow_convert_to_tensor(
@@ -308,7 +332,7 @@ def test_tensorflow_convert_to_tensor(
     fn_tree,
     frontend,
 ):
-    x_dtype, x, cast_dtype = dtype_x_cast
+    x_dtype, x, cast_dtype, _ = dtype_x_cast
     helpers.test_frontend_function(
         input_dtypes=x_dtype,
         as_variable_flags=as_variable,
